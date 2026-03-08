@@ -2,10 +2,11 @@
 Template Composer is a program designed to create text templates in any language. It enables users to compose files by nesting imports, allowing them to abstract away the complexities of the underlying code and template setup. This way, only the values that need to be adjusted are exposed.
 
 # Usage
-The ```job.cfg``` file requires three values:
-1. the instruction file
-2. the target file (any format)
-3. the output location (any format)
+`tcm <instructionFile> --source=<sourceFile> --target=<targetFile>`
+
+The source and target files can be of any text format.
+
+The ```job.cfg``` file is now deprecated.
 
 ## Instruction File
 The instruction file is processed sequentially, from top to bottom, as a series of expressions. This allows for template composition. Each expression follows a uniform format:
