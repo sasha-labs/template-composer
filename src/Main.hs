@@ -1,11 +1,10 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Main where
 
 import System.Directory
 import Data.Char
 import Data.List (isPrefixOf)
-import Data.Configurator
+import System.Environment (getArgs)
+import System.Exit (exitFailure)
 
 data OperatorType = Replace | Number | Place | Import
   deriving (Show,Eq)
@@ -145,12 +144,22 @@ performOps :: [Expression] -> String -> String
 performOps [] s = s
 performOps (e:es) s = performOps es (performOp e s)
 
+parseArgs :: [String] -> (Maybe String, Maybe String, Maybe String)
+parseArgs [] = (Nothing, Nothing, Nothing)
+parseArgs (a:as)
+  | "--source=" `isPrefixOf` a = let (m, _, t) = parseArgs as in (m, Just (drop 9 a), t)
+  | "--target=" `isPrefixOf` a = let (m, s, _) = parseArgs as in (m, s, Just (drop 9 a))
+  | otherwise                  = let (_, s, t) = parseArgs as in (Just a, s, t)
+
 main = do
-  cfg <- load [Required "./job.cfg"]
-  mPath <- require cfg "filepath"   :: IO String
-  tPath <- require cfg "targetpath" :: IO String
-  oPath <- require cfg "outputpath" :: IO String
-  mFile <- readFile mPath
-  tFile <- readFile tPath
-  exlist <- performImports (word mFile)
-  writeFile oPath (performOps exlist tFile)
+  args <- getArgs
+  let (mTmc, mSource, mTarget) = parseArgs args
+  case (mTmc, mSource, mTarget) of
+    (Just tmc, Just source, Just target) -> do
+      mFile <- readFile tmc
+      tFile <- readFile source
+      exlist <- performImports (word mFile)
+      writeFile target (performOps exlist tFile)
+    _ -> do
+      putStrLn "Usage: tmc <file.tmc> --source=<source> --target=<target>"
+      exitFailure
