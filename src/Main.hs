@@ -10,7 +10,7 @@ import System.Exit (exitFailure)
 data OperatorType = Replace | Number | Place | Import
   deriving (Show,Eq)
 
-data Node = Quote | LineBreak | Operator OperatorType | Variable String | Value String | Undecided String | EOF | Invalid
+data Node = Quote | LineBreak | Operator OperatorType | Variable String | Value String | Undecided String | EOF | Invalid | OpenParen | CloseParen | Comma
   deriving (Show,Eq)
 
 class NodeValue a where
@@ -21,7 +21,7 @@ instance NodeValue Node where
   nodeValue (Undecided s) = s
   nodeValue _ = "INVALID"
 
-data Expression = Apply Node Node Node | Nested [Expression]
+data Expression = Apply Node Node Node [Expression] | Nested [Expression]
   deriving Show
 
 escapees = ['\"']
@@ -36,6 +36,9 @@ escape (c:cs)
   | c == '\\' && x `elem` escapees = Undecided [x] : escape xs
   | c `elem` escapees = (findEscChar c) : escape cs
   | c == '\n' = LineBreak : escape cs
+  | c == '(' = OpenParen : escape cs
+  | c == ')' = CloseParen : escape cs
+  | c == ',' = Comma : escape cs
   | otherwise = Undecided [c] : escape cs
   where
     (x:xs) = cs
@@ -46,6 +49,9 @@ findEscChar _ = Quote
 combine :: [Node] -> [Node]
 combine [EOF] = [EOF]
 combine (Quote : ns) = combineValue ns
+combine (OpenParen : ns) = OpenParen : combine ns
+combine (CloseParen : ns) = CloseParen : combine ns
+combine (Comma : ns) = Comma : combine ns
 combine (Undecided s1 : Undecided s2 : ns)
   | s1++s2 == "--" = skipToBreak ns
   | s1++s2 == ":=" = Operator Replace : combine ns
@@ -82,28 +88,48 @@ combineVariable (Variable s : _ : ns) = Invalid : combine ns
 
 express :: [Node] -> [Expression]
 express [EOF] = []
-express (Variable v : Operator o : Value a : ns) = Apply (Variable v) (Operator o) (Value a) : express ns
+express (Variable v : Operator o : Value a : OpenParen : ns) =
+  let (params, rest) = expressParams ns
+  in Apply (Variable v) (Operator o) (Value a) params : express rest
+express (Variable v : Operator o : Value a : ns) = Apply (Variable v) (Operator o) (Value a) [] : express ns
 express (n:ns) = express ns
+
+expressParams :: [Node] -> ([Expression], [Node])
+expressParams (CloseParen : ns) = ([], ns)
+expressParams (Comma : ns) = expressParams ns
+expressParams (Variable v : Operator o : Value a : OpenParen : ns) =
+  let (innerParams, rest1) = expressParams ns
+      expr = Apply (Variable v) (Operator o) (Value a) innerParams
+      (moreParams, rest2) = expressParams rest1
+  in (expr : moreParams, rest2)
+expressParams (Variable v : Operator o : Value a : ns) =
+  let expr = Apply (Variable v) (Operator o) (Value a) []
+      (moreParams, rest) = expressParams ns
+  in (expr : moreParams, rest)
+expressParams ns = ([], ns)
 
 fileErrorString :: String -> String
 fileErrorString s = "FILE " ++ s ++ " NOT FOUND"
 
 importFile :: Expression -> IO (Expression)
-importFile (Apply v o a) = do
+importFile (Apply v o a params) = do
   if o == Operator Place then do
     putStrLn $ "  Placing file: " ++ nodeValue a
     fe <- doesFileExist (nodeValue a)
+    processedParams <- performImports params
     if fe then do
       b <- readFile (nodeValue a)
-      return (Apply v (Operator Replace) (Value b))
+      let result = performOps processedParams b
+      return (Apply v (Operator Replace) (Value result) [])
     else do
       putStrLn $ "  WARNING: File not found: " ++ nodeValue a
-      return (Apply v (Operator Replace) (Value (fileErrorString (nodeValue a))))
+      return (Apply v (Operator Replace) (Value (fileErrorString (nodeValue a))) [])
   else
-    return (Apply v o a)
+    return (Apply v o a params)
+importFile e = return e
 
 importNest :: Expression -> IO (Expression)
-importNest (Apply v o a) = do
+importNest (Apply v o a params) = do
   if o == Operator Import then do
     cwd <- getCurrentDirectory
     let path = cwd </> nodeValue a
@@ -115,9 +141,10 @@ importNest (Apply v o a) = do
       return (Nested bwImports)
     else do
       putStrLn $ "  WARNING: File not found: " ++ path
-      return (Apply v (Operator Replace) (Value (fileErrorString (nodeValue a))))
+      return (Apply v (Operator Replace) (Value (fileErrorString (nodeValue a))) [])
   else
-    return (Apply v o a)
+    return (Apply v o a params)
+importNest e = return e
 
 performImports :: [Expression] -> IO ([Expression])
 performImports e = do
@@ -142,7 +169,7 @@ numberInt a pattern word (c:cs)
 
 performOp :: Expression -> String -> String
 performOp (Nested es) s = performOps es s
-performOp (Apply v o a) s
+performOp (Apply v o a _) s
   | o == Operator Replace = replace (nodeValue v) (nodeValue a) s
   | o == Operator Number = number (nodeValue v) (nodeValue a) s
   | otherwise = s
