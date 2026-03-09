@@ -1,6 +1,7 @@
 module Main where
 
 import System.Directory
+import System.FilePath ((</>))
 import Data.Char
 import Data.List (isPrefixOf)
 import System.Environment (getArgs)
@@ -90,11 +91,13 @@ fileErrorString s = "FILE " ++ s ++ " NOT FOUND"
 importFile :: Expression -> IO (Expression)
 importFile (Apply v o a) = do
   if o == Operator Place then do
+    putStrLn $ "  Placing file: " ++ nodeValue a
     fe <- doesFileExist (nodeValue a)
     if fe then do
       b <- readFile (nodeValue a)
       return (Apply v (Operator Replace) (Value b))
-    else
+    else do
+      putStrLn $ "  WARNING: File not found: " ++ nodeValue a
       return (Apply v (Operator Replace) (Value (fileErrorString (nodeValue a))))
   else
     return (Apply v o a)
@@ -102,12 +105,16 @@ importFile (Apply v o a) = do
 importNest :: Expression -> IO (Expression)
 importNest (Apply v o a) = do
   if o == Operator Import then do
-    fe <- doesFileExist (nodeValue a)
+    cwd <- getCurrentDirectory
+    let path = cwd </> nodeValue a
+    putStrLn $ "  Importing: " ++ path
+    fe <- doesFileExist path
     if fe then do
-      b <- readFile (nodeValue a)
+      b <- readFile path
       bwImports <- performImports (word b)
       return (Nested bwImports)
-    else
+    else do
+      putStrLn $ "  WARNING: File not found: " ++ path
       return (Apply v (Operator Replace) (Value (fileErrorString (nodeValue a))))
   else
     return (Apply v o a)
@@ -156,10 +163,16 @@ main = do
   let (mTmc, mSource, mTarget) = parseArgs args
   case (mTmc, mSource, mTarget) of
     (Just tmc, Just source, Just target) -> do
+      putStrLn $ "Reading instructions: " ++ tmc
       mFile <- readFile tmc
+      putStrLn $ "Reading source: " ++ source
       tFile <- readFile source
+      putStrLn "Processing imports..."
       exlist <- performImports (word mFile)
+      putStrLn $ "Applying operations..."
       writeFile target (performOps exlist tFile)
+      putStrLn $ "Written to: " ++ target
+      putStrLn "Done."
     _ -> do
       putStrLn "Usage: tmc <file.tmc> --source=<source> --target=<target>"
       exitFailure
