@@ -54,10 +54,10 @@ combine (CloseParen : ns) = CloseParen : combine ns
 combine (Comma : ns) = Comma : combine ns
 combine (Undecided s1 : Undecided s2 : ns)
   | s1++s2 == "--" = skipToBreak ns
-  | s1++s2 == ":=" = Operator Replace : combine ns
-  | s1++s2 == ":_" = Operator Number : combine ns
-  | s1++s2 == "<-" = Operator Place : combine ns
-  | s1++s2 == "<=" = Operator Import : combine ns
+  | s1++s2 == ":=" = Operator Replace : combineAfterOp ns
+  | s1++s2 == ":_" = Operator Number : combineAfterOp ns
+  | s1++s2 == "<-" = Operator Place : combineAfterOp ns
+  | s1++s2 == "<=" = Operator Import : combineAfterOp ns
 combine (LineBreak : ns) = combine ns
 combine (Undecided s : ns)
   | isSpace c = combine ns
@@ -68,6 +68,30 @@ skipToBreak :: [Node] -> [Node]
 skipToBreak [EOF] = [EOF]
 skipToBreak (LineBreak : ns) = combine ns
 skipToBreak (_:ns) = skipToBreak ns
+
+combineAfterOp :: [Node] -> [Node]
+combineAfterOp [EOF] = [EOF]
+combineAfterOp (Quote : ns) = combineValue ns
+combineAfterOp (LineBreak : ns) = combineAfterOp ns
+combineAfterOp (OpenParen : ns) = OpenParen : combine ns
+combineAfterOp (CloseParen : ns) = CloseParen : combine ns
+combineAfterOp (Comma : ns) = Comma : combine ns
+combineAfterOp (Undecided s : ns)
+  | isSpace c = combineAfterOp ns
+  | otherwise = combineUnquoted (Value s : ns)
+  where (c:_) = s
+
+combineUnquoted :: [Node] -> [Node]
+combineUnquoted [Value s, EOF] = [Value s, EOF]
+combineUnquoted (Value s : LineBreak : ns) = Value s : combine (LineBreak : ns)
+combineUnquoted (Value s : OpenParen : ns) = Value s : OpenParen : combine ns
+combineUnquoted (Value s : CloseParen : ns) = Value s : CloseParen : combine ns
+combineUnquoted (Value s : Comma : ns) = Value s : Comma : combine ns
+combineUnquoted (Value s : Quote : ns) = Value s : combine (Quote : ns)
+combineUnquoted (Value s1 : Undecided s2 : ns)
+  | isSpace c = Value s1 : combine ns
+  | otherwise = combineUnquoted (Value (s1++s2) : ns)
+  where (c:_) = s2
 
 combineValue :: [Node] -> [Node]
 combineValue [EOF] = [Invalid, EOF]
