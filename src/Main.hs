@@ -98,7 +98,13 @@ combineValue [EOF] = [Invalid, EOF]
 combineValue [Value s, EOF] = [Invalid, EOF]
 combineValue (Quote : ns) = Value "" : combine ns
 combineValue (Undecided s : ns) = combineValue (Value s : ns)
+combineValue (Comma : ns) = combineValue (Value "," : ns)
+combineValue (OpenParen : ns) = combineValue (Value "(" : ns)
+combineValue (CloseParen : ns) = combineValue (Value ")" : ns)
 combineValue (Value s : Quote : ns) = Value s : combine ns
+combineValue (Value s : Comma : ns) = combineValue (Value (s++",") : ns)
+combineValue (Value s : OpenParen : ns) = combineValue (Value (s++"(") : ns)
+combineValue (Value s : CloseParen : ns) = combineValue (Value (s++")") : ns)
 combineValue (Value s : LineBreak : ns) = combineValue (Value (s++"\n") : ns)
 combineValue (Value s1 : Undecided s2 : ns) = combineValue (Value (s1++s2) : ns)
 
